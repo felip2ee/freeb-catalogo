@@ -1,22 +1,16 @@
-# Stack do Portainer — FreeB (Néctar Pura)
-# Deploy: Portainer → Stacks → Add stack → Repository (aponta p/ este repo no GitHub)
+# Stack do Portainer (Docker Swarm) — FreeB
+# A imagem é buildada pelo GitHub Actions e publicada no GHCR (ghcr.io).
+# O Swarm NÃO builda (ignora "build:") — aqui só referenciamos a imagem PRONTA.
+# Deploy: Portainer → Stacks → Add stack → Repository (aponta p/ este repo).
 #   Compose path: docker-compose.yml
-# Preencha os valores em "Environment variables" da stack (NÃO commitar segredos).
-# Conecta automaticamente ao seu Supabase Cloud via as env vars abaixo.
+# Preencha as env vars da stack no Portainer (NÃO commitar segredos).
+# As VITE_* NÃO entram aqui: são embutidas no build (GitHub Actions → secrets do repo).
 
 services:
   freeb:
-    container_name: freeb
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        # VITE_* são embutidas no bundle do cliente em tempo de BUILD (públicas).
-        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
-        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
-        VITE_MERCADOPAGO_PUBLIC_KEY: ${VITE_MERCADOPAGO_PUBLIC_KEY}
-    image: freeb:latest
-    restart: unless-stopped
+    # Troque pelo caminho do seu pacote no GHCR se o repo tiver outro nome.
+    # Pode sobrescrever definindo IMAGE nas env vars da stack.
+    image: ${IMAGE:-ghcr.io/felip2ee/freeb-catalogo:latest}
     ports:
       - "${APP_PORT:-3000}:3000"
     environment:
@@ -34,3 +28,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
