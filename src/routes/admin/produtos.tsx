@@ -40,7 +40,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { formatBRL, type Accent } from "@/lib/products";
+import { ACCENTS, formatBRL, type Accent } from "@/lib/products";
 import { slugify } from "@/lib/slug";
 import {
   listAdminProducts,
@@ -57,8 +57,6 @@ export const Route = createFileRoute("/admin/produtos")({
   head: () => ({ meta: [{ title: "Produtos — Admin FreeB" }] }),
   component: AdminProdutos,
 });
-
-const ACCENTS: Accent[] = ["orange", "pink", "gold", "purple"];
 
 interface FormState {
   name: string;

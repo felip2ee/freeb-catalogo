@@ -6,15 +6,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
+import { PageShell } from "@/components/PageShell";
 import { PaymentBrick, type BrickSubmit } from "@/components/PaymentBrick";
 import { useCart } from "@/contexts/CartContext";
 import { useProductMap } from "@/lib/api/products";
 import { processCheckout, type CheckoutResult } from "@/lib/api/payments";
 import { formatBRL, type Product } from "@/lib/products";
 import { onlyDigits, formatCPF, isValidCPF } from "@/lib/cpf";
-import { saveLastOrder } from "@/routes/obrigado";
+import { saveOrderFromApi } from "@/routes/obrigado";
 
 export const Route = createFileRoute("/checkout")({
   head: () => ({
@@ -44,6 +43,8 @@ const schema = z.object({
     .trim()
     .refine((v) => onlyDigits(v).length >= 10 && onlyDigits(v).length <= 11, "Telefone inválido"),
   cpf: z.string().trim().refine(isValidCPF, "CPF inválido"),
+  // LGPD: consentimento explícito para usar os dados no processamento do pedido.
+  consent: z.boolean().refine((v) => v, "Autorize o uso dos dados para continuar"),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -54,7 +55,13 @@ function CheckoutPage() {
   const { items, clear } = useCart();
   const navigate = useNavigate();
   const { map, isLoading } = useProductMap();
-  const [values, setValues] = useState<FormValues>({ name: "", email: "", phone: "", cpf: "" });
+  const [values, setValues] = useState<FormValues>({
+    name: "",
+    email: "",
+    phone: "",
+    cpf: "",
+    consent: false,
+  });
   const [errors, setErrors] = useState<FormErrors>({});
   const [step, setStep] = useState<Step>("form");
   const [pix, setPix] = useState<NonNullable<CheckoutResult["payment"]["pix"]> | null>(null);
@@ -70,16 +77,16 @@ function CheckoutPage() {
 
   if (isLoading && items.length > 0) {
     return (
-      <Shell>
+      <PageShell>
         <p className="py-24 text-center text-brand-deep/60">Carregando checkout...</p>
-      </Shell>
+      </PageShell>
     );
   }
 
   // Depois do Pix, o carrinho é limpo — mostramos a tela do QR mesmo com lines vazio.
   if (lines.length === 0 && step !== "pix") {
     return (
-      <Shell>
+      <PageShell>
         <div className="py-24 text-center">
           <h1 className="font-display text-4xl font-bold">Carrinho vazio</h1>
           <p className="mt-3 text-brand-deep/60">
@@ -92,7 +99,7 @@ function CheckoutPage() {
             Ver catálogo
           </Button>
         </div>
-      </Shell>
+      </PageShell>
     );
   }
 
@@ -123,30 +130,36 @@ function CheckoutPage() {
     try {
       result = await processCheckout({
         data: {
-          customer: values,
+          customer: {
+            name: values.name,
+            email: values.email,
+            phone: values.phone,
+            cpf: values.cpf,
+          },
           items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
           payment: formData,
+          consent: values.consent,
         },
       });
     } catch (err) {
-      toast.error("Não foi possível processar o pagamento", {
-        description: "Tente novamente em instantes.",
-      });
+      const limited = err instanceof Error && err.message.includes("rate_limited");
+      toast.error(
+        limited ? "Muitas tentativas seguidas" : "Não foi possível processar o pagamento",
+        {
+          description: limited
+            ? "Aguarde um minuto e tente novamente."
+            : "Tente novamente em instantes.",
+        },
+      );
       throw err; // faz o Brick exibir estado de erro
     }
 
     const { order, payment } = result;
-    saveLastOrder({
-      code: order.code,
-      createdAt: order.created_at,
-      customer: values,
-      lines: order.items.map((it) => ({
-        productId: it.product_id,
-        quantity: it.quantity,
-        unitPrice: it.unit_price,
-        name: it.name,
-      })),
-      total: order.total,
+    saveOrderFromApi(order, {
+      name: values.name,
+      email: values.email,
+      phone: values.phone,
+      cpf: values.cpf,
     });
 
     if (payment.method === "pix" && payment.pix) {
@@ -173,7 +186,7 @@ function CheckoutPage() {
   // ── Tela do Pix ─────────────────────────────────────────────────────────────
   if (step === "pix" && pix) {
     return (
-      <Shell>
+      <PageShell>
         <div className="mx-auto max-w-md py-8 text-center">
           <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-accent-orange/20 text-accent-orange">
             <QrCode className="size-7" />
@@ -210,12 +223,12 @@ function CheckoutPage() {
             </Button>
           </div>
         </div>
-      </Shell>
+      </PageShell>
     );
   }
 
   return (
-    <Shell>
+    <PageShell>
       <button
         type="button"
         onClick={() => (step === "payment" ? setStep("form") : navigate({ to: "/carrinho" }))}
@@ -282,6 +295,25 @@ function CheckoutPage() {
                     </Field>
                   </div>
                 </div>
+
+                {/* Consentimento LGPD */}
+                <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border border-brand-deep/10 bg-brand-cream/40 p-4 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={values.consent}
+                    onChange={(e) => setField("consent", e.target.checked)}
+                    className="mt-0.5 size-4 shrink-0 accent-brand-deep"
+                  />
+                  <span className="text-brand-deep/80">
+                    Autorizo o uso dos meus dados (nome, CPF, e-mail e telefone) para processar e
+                    acompanhar este pedido, conforme a{" "}
+                    <abbr title="Lei Geral de Proteção de Dados">LGPD</abbr>. Os dados não são
+                    compartilhados para outros fins.
+                  </span>
+                </label>
+                {errors.consent && (
+                  <p className="mt-2 text-xs font-medium text-destructive">{errors.consent}</p>
+                )}
               </section>
 
               <Button
@@ -330,7 +362,7 @@ function CheckoutPage() {
           </div>
         </aside>
       </div>
-    </Shell>
+    </PageShell>
   );
 }
 
@@ -359,16 +391,6 @@ function CopyPix({ code }: { code: string }) {
           {copied ? "Copiado" : "Copiar"}
         </Button>
       </div>
-    </div>
-  );
-}
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-screen bg-brand-cream font-sans text-brand-deep">
-      <Header />
-      <main className="mx-auto max-w-5xl px-6 py-16">{children}</main>
-      <Footer />
     </div>
   );
 }

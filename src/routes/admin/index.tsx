@@ -38,12 +38,13 @@ import {
 import { formatBRL } from "@/lib/products";
 import { statusMeta } from "@/lib/order-status";
 import {
-  listAdminOrders,
+  adminOrdersQuery,
   listAdminProducts,
   listAdminCategories,
   updateOrderStatus,
   type AdminOrder,
 } from "@/lib/api/admin";
+import { OrderItemsList } from "@/components/OrderItemsList";
 import { toCSV, downloadCSV } from "@/lib/csv";
 
 export const Route = createFileRoute("/admin/")({
@@ -64,7 +65,7 @@ const shortFlavor = (name: string) => name.replace(/^suco de\s+/i, "");
 type Preset = "7d" | "30d" | "month" | "all" | "custom";
 
 function AdminDashboard() {
-  const orders = useQuery({ queryKey: ["admin", "orders"], queryFn: listAdminOrders });
+  const orders = useQuery(adminOrdersQuery);
   const products = useQuery({ queryKey: ["admin", "products"], queryFn: listAdminProducts });
   const categories = useQuery({
     queryKey: ["admin", "categories"],
@@ -222,7 +223,7 @@ function AdminDashboard() {
       o.payment_method ?? "",
       o.customer?.name ?? "",
       o.customer?.cpf ?? "",
-      o.items.map((i) => `${i.quantity}x ${i.name}`).join("; "),
+      o.items.map((i) => `${i.quantity}x ${i.name}${i.size ? ` (${i.size})` : ""}`).join("; "),
       brNumber(o.total),
     ]);
     downloadCSV(`pedidos_${from || "inicio"}_a_${to || "hoje"}.csv`, toCSV(headers, rows));
@@ -475,7 +476,6 @@ function PendingDeliveries({ orders }: { orders: AdminOrder[] }) {
     try {
       await updateOrderStatus(selected.id, "delivered");
       qc.invalidateQueries({ queryKey: ["admin", "orders"] });
-      qc.invalidateQueries({ queryKey: ["admin", "customers"] });
       toast.success(`Pedido ${selected.code} entregue ✅`);
       setSelected(null);
     } catch {
@@ -544,19 +544,7 @@ function PendingDeliveries({ orders }: { orders: AdminOrder[] }) {
                 <p className="font-semibold">{selected.customer?.name}</p>
                 <p className="text-brand-deep/60">{selected.customer?.phone}</p>
               </div>
-              <ul className="divide-y divide-brand-deep/10">
-                {selected.items.map((it) => (
-                  <li key={it.product_id} className="flex justify-between py-2">
-                    <span>
-                      <span className="font-mono text-xs text-brand-deep/50">
-                        {String(it.quantity).padStart(2, "0")}×
-                      </span>{" "}
-                      {it.name}
-                    </span>
-                    <span className="font-mono">{formatBRL(it.unit_price * it.quantity)}</span>
-                  </li>
-                ))}
-              </ul>
+              <OrderItemsList items={selected.items} />
               <div className="flex items-center justify-between border-t border-brand-deep/10 pt-3">
                 <span className="text-xs uppercase tracking-widest text-brand-deep/60">Total</span>
                 <span className="font-display text-2xl font-bold">{formatBRL(selected.total)}</span>

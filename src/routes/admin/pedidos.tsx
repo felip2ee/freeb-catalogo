@@ -23,7 +23,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/products";
 import { ORDER_STATUSES, statusMeta, type OrderStatus } from "@/lib/order-status";
-import { listAdminOrders, updateOrderStatus, type AdminOrder } from "@/lib/api/admin";
+import { adminOrdersQuery, updateOrderStatus, type AdminOrder } from "@/lib/api/admin";
+import { OrderItemsList } from "@/components/OrderItemsList";
 
 export const Route = createFileRoute("/admin/pedidos")({
   head: () => ({ meta: [{ title: "Pedidos — Admin FreeB" }] }),
@@ -32,7 +33,7 @@ export const Route = createFileRoute("/admin/pedidos")({
 
 function AdminPedidos() {
   const qc = useQueryClient();
-  const orders = useQuery({ queryKey: ["admin", "orders"], queryFn: listAdminOrders });
+  const orders = useQuery(adminOrdersQuery);
 
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
   const [search, setSearch] = useState("");
@@ -53,7 +54,6 @@ function AdminPedidos() {
     try {
       await updateOrderStatus(o.id, status);
       qc.invalidateQueries({ queryKey: ["admin", "orders"] });
-      qc.invalidateQueries({ queryKey: ["admin", "customers"] });
       toast.success(`Pedido ${o.code} → ${statusMeta(status).label}`);
     } catch {
       toast.error("Não foi possível mudar o status");
@@ -190,19 +190,7 @@ function AdminPedidos() {
                 <p className="font-mono text-xs text-brand-deep/50">CPF {detail.customer?.cpf}</p>
               </div>
 
-              <ul className="divide-y divide-brand-deep/10">
-                {detail.items.map((it) => (
-                  <li key={it.product_id} className="flex justify-between py-2">
-                    <span>
-                      <span className="font-mono text-xs text-brand-deep/50">
-                        {String(it.quantity).padStart(2, "0")}×
-                      </span>{" "}
-                      {it.name}
-                    </span>
-                    <span className="font-mono">{formatBRL(it.unit_price * it.quantity)}</span>
-                  </li>
-                ))}
-              </ul>
+              <OrderItemsList items={detail.items} />
 
               <div className="flex items-center justify-between border-t border-brand-deep/10 pt-3">
                 <span className="text-xs uppercase tracking-widest text-brand-deep/60">

@@ -1,3 +1,4 @@
+import { queryOptions } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import type { Accent } from "@/lib/products";
 import type { OrderStatus } from "@/lib/order-status";
@@ -112,6 +113,7 @@ export interface AdminOrderItem {
   name: string;
   unit_price: number;
   quantity: number;
+  size: string | null;
 }
 
 export interface AdminOrderCustomer {
@@ -139,10 +141,14 @@ function one<T>(v: T | T[] | null): T | null {
 }
 
 export async function listAdminOrders(): Promise<AdminOrder[]> {
+  // Cancela pedidos 'pending' > 24h (Pix abandonado) antes de listar.
+  // Ignora erro para não quebrar o painel se a migration 0008 ainda não rodou.
+  await supabase.rpc("expire_stale_orders");
+
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id,code,status,payment_method,total,created_at,customer:customers(id,name,email,phone,cpf),order_items(product_id,name,unit_price,quantity)",
+      "id,code,status,payment_method,total,created_at,customer:customers(id,name,email,phone,cpf),order_items(product_id,name,unit_price,quantity,size)",
     )
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -162,10 +168,19 @@ export async function listAdminOrders(): Promise<AdminOrder[]> {
         name: it.name,
         unit_price: Number(it.unit_price),
         quantity: it.quantity,
+        size: it.size ?? null,
       })),
     };
   });
 }
+
+// Opções compartilhadas da lista de pedidos do admin: um único cache alimenta
+// Dashboard, Pedidos e Clientes; staleTime evita refetch em cada troca de foco.
+export const adminOrdersQuery = queryOptions({
+  queryKey: ["admin", "orders"],
+  queryFn: listAdminOrders,
+  staleTime: 30_000,
+});
 
 export async function updateOrderStatus(id: string, status: OrderStatus): Promise<void> {
   const { error } = await supabase.from("orders").update({ status }).eq("id", id);
@@ -184,28 +199,20 @@ export interface CustomerStats {
   lastOrderAt: string | null;
 }
 
-// Agrega no cliente a partir dos pedidos (loja é pequena). Cada customer sempre
-// tem >= 1 pedido, pois clientes são criados no checkout.
-export async function listCustomerStats(): Promise<CustomerStats[]> {
-  const { data, error } = await supabase
-    .from("orders")
-    .select("total,created_at,customer:customers(id,name,email,phone,cpf)")
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-
+// Agrega no cliente a partir dos pedidos já em cache (adminOrdersQuery) — antes
+// isso refazia um segundo full scan da tabela orders. Cada customer sempre tem
+// >= 1 pedido, pois clientes são criados no checkout.
+export function customerStatsFromOrders(orders: AdminOrder[]): CustomerStats[] {
   const map = new Map<string, CustomerStats>();
-  for (const o of data ?? []) {
-    const row = o as Record<string, unknown>;
-    const c = one(row.customer as AdminOrderCustomer | AdminOrderCustomer[] | null);
+  for (const o of orders) {
+    const c = o.customer;
     if (!c) continue;
-    const total = Number(row.total);
-    const createdAt = row.created_at as string;
     const existing = map.get(c.id);
     if (existing) {
       existing.orderCount += 1;
-      existing.totalSpent += total;
-      if (!existing.lastOrderAt || createdAt > existing.lastOrderAt) {
-        existing.lastOrderAt = createdAt;
+      existing.totalSpent += o.total;
+      if (!existing.lastOrderAt || o.created_at > existing.lastOrderAt) {
+        existing.lastOrderAt = o.created_at;
       }
     } else {
       map.set(c.id, {
@@ -215,8 +222,8 @@ export async function listCustomerStats(): Promise<CustomerStats[]> {
         phone: c.phone,
         cpf: c.cpf,
         orderCount: 1,
-        totalSpent: total,
-        lastOrderAt: createdAt,
+        totalSpent: o.total,
+        lastOrderAt: o.created_at,
       });
     }
   }

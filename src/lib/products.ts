@@ -1,5 +1,9 @@
 export type Accent = "orange" | "pink" | "gold" | "purple";
 
+// Lista canônica de accents — compartilhada entre o mapeamento de produtos e o
+// formulário do admin (antes cada um mantinha a própria cópia).
+export const ACCENTS: Accent[] = ["orange", "pink", "gold", "purple"];
+
 export interface Category {
   id: string;
   name: string;

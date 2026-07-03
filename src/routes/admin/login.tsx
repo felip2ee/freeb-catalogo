@@ -4,7 +4,7 @@ import { LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { signInAdmin, useAdminSession } from "@/lib/auth";
+import { signInPanel, useAdminSession } from "@/lib/auth";
 
 export const Route = createFileRoute("/admin/login")({
   head: () => ({
@@ -15,29 +15,30 @@ export const Route = createFileRoute("/admin/login")({
 
 function AdminLogin() {
   const navigate = useNavigate();
-  const { isAdmin, loading: sessionLoading } = useAdminSession();
+  const { role, loading: sessionLoading } = useAdminSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
 
-  // Já logado como admin → entra direto no painel.
+  // Já logado → entra no painel de acordo com o papel.
   useEffect(() => {
-    if (!sessionLoading && isAdmin) navigate({ to: "/admin" });
-  }, [sessionLoading, isAdmin, navigate]);
+    if (sessionLoading || !role) return;
+    navigate({ to: role === "staff" ? "/admin/do-dia" : "/admin" });
+  }, [sessionLoading, role, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(undefined);
     setSubmitting(true);
     try {
-      await signInAdmin(email.trim(), password);
-      navigate({ to: "/admin" });
+      const signedRole = await signInPanel(email.trim(), password);
+      navigate({ to: signedRole === "staff" ? "/admin/do-dia" : "/admin" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
       setError(
-        msg === "not_admin"
-          ? "Esta conta não tem acesso de administrador."
+        msg === "not_authorized"
+          ? "Esta conta não tem acesso ao painel."
           : "E-mail ou senha inválidos.",
       );
     } finally {

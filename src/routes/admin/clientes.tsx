@@ -14,7 +14,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatBRL } from "@/lib/products";
 import { statusMeta } from "@/lib/order-status";
-import { listCustomerStats, listAdminOrders, type CustomerStats } from "@/lib/api/admin";
+import { adminOrdersQuery, customerStatsFromOrders, type CustomerStats } from "@/lib/api/admin";
 
 export const Route = createFileRoute("/admin/clientes")({
   head: () => ({ meta: [{ title: "Clientes — Admin FreeB" }] }),
@@ -22,26 +22,24 @@ export const Route = createFileRoute("/admin/clientes")({
 });
 
 function AdminClientes() {
-  const customers = useQuery({
-    queryKey: ["admin", "customers"],
-    queryFn: listCustomerStats,
-  });
-  // Reusa a lista de pedidos (já em cache pela tela de Pedidos) para o histórico.
-  const orders = useQuery({ queryKey: ["admin", "orders"], queryFn: listAdminOrders });
+  // Um único fetch: as estatísticas por cliente são derivadas da mesma lista
+  // de pedidos usada pelas outras telas (antes eram dois full scans de orders).
+  const orders = useQuery(adminOrdersQuery);
+  const customers = useMemo(() => customerStatsFromOrders(orders.data ?? []), [orders.data]);
 
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<CustomerStats | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return customers.data ?? [];
-    return (customers.data ?? []).filter(
+    if (!q) return customers;
+    return customers.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         c.email.toLowerCase().includes(q) ||
         c.cpf.includes(q.replace(/\D/g, "")),
     );
-  }, [customers.data, search]);
+  }, [customers, search]);
 
   const selectedOrders = useMemo(() => {
     if (!selected) return [];
@@ -52,7 +50,7 @@ function AdminClientes() {
     <div>
       <h1 className="font-display text-3xl font-bold tracking-tight">Clientes</h1>
       <p className="mt-1 text-sm text-brand-deep/60">
-        {customers.data?.length ?? 0} cliente(s) — ordenados por total gasto.
+        {customers.length} cliente(s) — ordenados por total gasto.
       </p>
 
       <div className="relative mt-6 max-w-md">
@@ -77,7 +75,7 @@ function AdminClientes() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {customers.isLoading ? (
+            {orders.isLoading ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-10 text-center text-brand-deep/60">
                   Carregando...

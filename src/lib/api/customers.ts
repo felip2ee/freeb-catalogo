@@ -1,13 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-// ⚠️ PROVISÓRIO (Fase 3): consulta o histórico apenas pelo CPF. É fraco — CPF é
-// adivinhável, então qualquer um poderia ver os pedidos de outra pessoa. Antes de
-// produção, trocar por verificação de posse do e-mail (magic link / OTP). Ver CLAUDE.md.
+// Histórico do cliente com verificação de posse do e-mail (Supabase Auth OTP).
+// Fluxo: o cliente pede um código por e-mail (signInWithOtp), digita o código
+// (verifyOtp) e o navegador envia o access_token da sessão para cá. O servidor
+// valida o token e busca os pedidos dos cadastros ligados àquele e-mail.
+// Substitui a consulta por CPF (CPF é adivinhável — qualquer um veria o
+// histórico de outra pessoa).
 
-const historyInput = z.object({
-  // aceita CPF com máscara; normaliza para 11 dígitos no handler
-  cpf: z.string().trim().min(11).max(14),
+const myOrdersInput = z.object({
+  accessToken: z.string().min(20),
 });
 
 export interface OrderHistoryItem {
@@ -15,6 +17,7 @@ export interface OrderHistoryItem {
   name: string;
   unit_price: number;
   quantity: number;
+  size: string | null;
 }
 
 export interface OrderHistoryOrder {
@@ -32,45 +35,64 @@ export interface CustomerHistory {
   orders: OrderHistoryOrder[];
 }
 
-export const getCustomerHistory = createServerFn({ method: "POST" })
-  .validator((data: unknown) => historyInput.parse(data))
+// O e-mail é verificado, mas o cadastro pode ter sido criado por terceiro com
+// e-mail digitado errado — CPF/telefone continuam mascarados por precaução.
+const maskCpf = (cpf: string) => `***.***.***-${cpf.slice(-2)}`;
+const maskPhone = (phone: string) => {
+  const d = phone.replace(/\D/g, "");
+  return d.length >= 4 ? `*****${d.slice(-4)}` : "****";
+};
+
+export const getMyOrders = createServerFn({ method: "POST" })
+  .validator((data: unknown) => myOrdersInput.parse(data))
   .handler(async ({ data }): Promise<CustomerHistory> => {
-    const cpf = data.cpf.replace(/\D/g, "");
-    if (cpf.length !== 11) return { customer: null, orders: [] };
+    const { assertRateLimit } = await import("@/lib/rate-limit.server");
+    assertRateLimit("my-orders", 20, 60_000);
 
     const { supabaseAdmin } = await import("@/lib/supabase.server");
 
-    const { data: customer, error: cErr } = await supabaseAdmin
+    // Valida o token e extrai o e-mail comprovado pelo OTP.
+    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(data.accessToken);
+    const email = userData?.user?.email;
+    if (authErr || !email) throw new Error("not_authenticated");
+
+    // ilike sem curinga = igualdade case-insensitive. Um mesmo e-mail pode ter
+    // mais de um cadastro (CPFs diferentes) — agregamos todos.
+    const { data: customers, error: cErr } = await supabaseAdmin
       .from("customers")
-      .select("name,email,phone,cpf,id")
-      .eq("cpf", cpf)
-      .maybeSingle();
+      .select("id,name,email,phone,cpf,created_at")
+      .ilike("email", email)
+      .order("created_at", { ascending: false });
 
     if (cErr) {
-      console.error("getCustomerHistory customer error:", cErr);
+      console.error("getMyOrders customers error:", cErr);
       throw new Error("history_lookup_failed");
     }
-    if (!customer) return { customer: null, orders: [] };
+    if (!customers || customers.length === 0) return { customer: null, orders: [] };
 
     const { data: orders, error: oErr } = await supabaseAdmin
       .from("orders")
       .select(
-        "id,code,status,payment_method,total,created_at,order_items(product_id,name,unit_price,quantity)",
+        "id,code,status,payment_method,total,created_at,order_items(product_id,name,unit_price,quantity,size)",
       )
-      .eq("customer_id", customer.id)
+      .in(
+        "customer_id",
+        customers.map((c) => c.id),
+      )
       .order("created_at", { ascending: false });
 
     if (oErr) {
-      console.error("getCustomerHistory orders error:", oErr);
+      console.error("getMyOrders orders error:", oErr);
       throw new Error("history_lookup_failed");
     }
 
+    const latest = customers[0];
     return {
       customer: {
-        name: customer.name,
-        email: customer.email,
-        phone: customer.phone,
-        cpf: customer.cpf,
+        name: latest.name,
+        email,
+        phone: maskPhone(latest.phone),
+        cpf: maskCpf(latest.cpf),
       },
       orders: (orders ?? []).map((o) => ({
         id: o.id,
@@ -84,6 +106,7 @@ export const getCustomerHistory = createServerFn({ method: "POST" })
           name: it.name,
           unit_price: Number(it.unit_price),
           quantity: it.quantity,
+          size: it.size ?? null,
         })),
       })),
     };

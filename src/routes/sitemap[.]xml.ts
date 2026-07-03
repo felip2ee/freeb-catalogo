@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type {} from "@tanstack/react-start";
 
-const BASE_URL = "https://id-preview--3c9d54f3-ba27-4181-85c6-c9afd761f30f.lovable.app";
+// URL pública do site: vem de APP_URL (definido na stack/produção). Sem barra no fim.
+const BASE_URL = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 
 interface SitemapEntry {
   path: string;

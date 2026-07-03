@@ -80,10 +80,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "FreeB — Catálogo de Sucos 100% Naturais" },
-      { name: "description", content: "Catálogo online de sucos naturais. Laranja, acerola, caju e maracujá em vários tamanhos (300ml, 500ml, 1L e 5L), direto do produtor." },
+      {
+        name: "description",
+        content:
+          "Catálogo online de sucos naturais. Laranja, acerola, caju e maracujá em vários tamanhos (300ml, 500ml, 1L e 5L), direto do produtor.",
+      },
       { name: "author", content: "FreeB" },
       { property: "og:title", content: "FreeB — Catálogo de Sucos 100% Naturais" },
-      { property: "og:description", content: "Catálogo online de sucos naturais. Laranja, acerola, caju e maracujá em vários tamanhos (300ml, 500ml, 1L e 5L), direto do produtor." },
+      {
+        property: "og:description",
+        content:
+          "Catálogo online de sucos naturais. Laranja, acerola, caju e maracujá em vários tamanhos (300ml, 500ml, 1L e 5L), direto do produtor.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@FreeB" },

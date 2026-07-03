@@ -15,10 +15,7 @@ export function QuantitySelector({
   max = 99,
   size = "md",
 }: QuantitySelectorProps) {
-  const buttonClass =
-    size === "sm"
-      ? "h-8 w-8 text-brand-deep"
-      : "h-10 w-10 text-brand-deep";
+  const buttonClass = size === "sm" ? "h-8 w-8 text-brand-deep" : "h-10 w-10 text-brand-deep";
   const valueClass = size === "sm" ? "w-8 text-sm" : "w-10 text-base";
 
   return (

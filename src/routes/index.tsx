@@ -57,7 +57,7 @@ function CatalogPage() {
               </h1>
               <p className="mt-6 max-w-xl text-lg leading-relaxed text-brand-deep/80 text-pretty">
                 Explore nossa linha premium de sucos 100% naturais, produzidos com frutas
-                selecionadas no auge da maturação e envase sustentável de 600ml.
+                selecionadas no auge da maturação, em tamanhos de 300ml a 5L.
               </p>
             </div>
           </div>
@@ -71,7 +71,7 @@ function CatalogPage() {
                   Catálogo Completo
                 </span>
                 <h2 className="mt-2 font-display text-3xl font-bold tracking-tight">
-                  Nossas Edições 600ml
+                  Nossas Edições
                 </h2>
               </div>
               <span className="hidden text-sm text-brand-deep/60 md:block">
@@ -153,8 +153,7 @@ function CatalogPage() {
               size="lg"
               className="mt-8 rounded-full bg-accent-orange px-10 py-6 text-sm font-bold uppercase tracking-widest text-brand-deep transition-transform hover:scale-105"
               onClick={() =>
-                (window.location.href =
-                  "mailto:contato@freeb.com.br?subject=Orçamento%20Atacado")
+                (window.location.href = "mailto:contato@freeb.com.br?subject=Orçamento%20Atacado")
               }
             >
               Solicitar Orçamento Atacado

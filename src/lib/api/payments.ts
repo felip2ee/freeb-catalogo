@@ -1,6 +1,23 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { CreatedOrder } from "@/lib/api/orders";
+import { mapMpStatus } from "@/lib/mp-status";
+
+// Pedido retornado pela RPC create_order (snapshot de nome/preço já gravado).
+export interface CreatedOrder {
+  id: string;
+  code: string;
+  status: string;
+  total: number;
+  created_at: string;
+  customer: { name: string; email: string; phone: string; cpf: string };
+  items: {
+    product_id: string;
+    name: string;
+    unit_price: number;
+    quantity: number;
+    size: string | null;
+  }[];
+}
 
 // Dados que o Payment Brick envia no onSubmit (formData). Passamos adiante, mas
 // o VALOR é sempre recalculado no servidor (nunca confiamos no amount do cliente).
@@ -21,6 +38,8 @@ const paymentInput = z
   })
   .passthrough();
 
+// O cliente envia APENAS productId + quantity: preço, nome e total são
+// calculados no servidor a partir da tabela products.
 const checkoutInput = z.object({
   customer: z.object({
     name: z.string().trim().min(2).max(100),
@@ -37,6 +56,9 @@ const checkoutInput = z.object({
     )
     .min(1),
   payment: paymentInput,
+  // LGPD: o pedido só é criado com consentimento explícito; a RPC registra
+  // customers.consent_at (migration 0010).
+  consent: z.literal(true),
 });
 
 export interface CheckoutResult {
@@ -57,6 +79,9 @@ export interface CheckoutResult {
 export const processCheckout = createServerFn({ method: "POST" })
   .validator((data: unknown) => checkoutInput.parse(data))
   .handler(async ({ data }): Promise<CheckoutResult> => {
+    const { assertRateLimit } = await import("@/lib/rate-limit.server");
+    assertRateLimit("checkout", 10, 60_000);
+
     const { supabaseAdmin } = await import("@/lib/supabase.server");
     const { mpPayment } = await import("@/lib/mercadopago.server");
 
@@ -73,8 +98,11 @@ export const processCheckout = createServerFn({ method: "POST" })
       p_payment_method: method,
     });
     if (orderErr) {
+      // Detalhe fica só no log do servidor; o cliente recebe um código genérico.
       console.error("create_order error:", orderErr);
-      throw new Error(orderErr.message || "order_creation_failed");
+      const { logServerError } = await import("@/lib/log.server");
+      await logServerError("checkout", orderErr, { stage: "create_order" });
+      throw new Error("order_creation_failed");
     }
     const order = orderData as CreatedOrder;
 
@@ -117,19 +145,23 @@ export const processCheckout = createServerFn({ method: "POST" })
       }
     } catch (err) {
       console.error("MP payment error:", err);
+      const { logServerError } = await import("@/lib/log.server");
+      await logServerError("checkout", err, { stage: "mp_payment", code: order.code });
       // Pagamento falhou → marca o pedido como cancelado e propaga o erro.
       await supabaseAdmin.from("orders").update({ status: "canceled" }).eq("id", order.id);
       throw new Error("payment_failed");
     }
 
-    // 3) Reflete o status do pagamento no pedido.
-    //    Cartão aprovado → paid; recusado → canceled; Pix/pendente → pending
-    //    (o webhook confirma o Pix depois).
-    let orderStatus: "paid" | "pending" | "canceled" = "pending";
-    if (mpStatus === "approved") orderStatus = "paid";
-    else if (mpStatus === "rejected" || mpStatus === "cancelled") orderStatus = "canceled";
-
-    await supabaseAdmin.from("orders").update({ status: orderStatus }).eq("id", order.id);
+    // 3) Reflete o status do pagamento no pedido — só a partir de 'pending',
+    //    para não regredir um 'paid' que o webhook possa ter gravado no meio.
+    const orderStatus = mapMpStatus(mpStatus) ?? "pending";
+    if (orderStatus !== "pending") {
+      await supabaseAdmin
+        .from("orders")
+        .update({ status: orderStatus })
+        .eq("id", order.id)
+        .eq("status", "pending");
+    }
 
     return {
       order: { ...order, status: orderStatus },

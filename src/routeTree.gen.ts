@@ -19,7 +19,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminProdutosRouteImport } from './routes/admin/produtos'
 import { Route as AdminPedidosRouteImport } from './routes/admin/pedidos'
+import { Route as AdminLogsRouteImport } from './routes/admin/logs'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
+import { Route as AdminFuncionariosRouteImport } from './routes/admin/funcionarios'
+import { Route as AdminDoDiaRouteImport } from './routes/admin/do-dia'
+import { Route as AdminConfiguracoesRouteImport } from './routes/admin/configuracoes'
 import { Route as AdminClientesRouteImport } from './routes/admin/clientes'
 import { Route as AdminCategoriasRouteImport } from './routes/admin/categorias'
 import { Route as ApiWebhooksMercadopagoRouteImport } from './routes/api/webhooks/mercadopago'
@@ -74,9 +78,29 @@ const AdminPedidosRoute = AdminPedidosRouteImport.update({
   path: '/pedidos',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const AdminLogsRoute = AdminLogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const AdminLoginRoute = AdminLoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminFuncionariosRoute = AdminFuncionariosRouteImport.update({
+  id: '/funcionarios',
+  path: '/funcionarios',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminDoDiaRoute = AdminDoDiaRouteImport.update({
+  id: '/do-dia',
+  path: '/do-dia',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminConfiguracoesRoute = AdminConfiguracoesRouteImport.update({
+  id: '/configuracoes',
+  path: '/configuracoes',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminClientesRoute = AdminClientesRouteImport.update({
@@ -105,7 +129,11 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin/categorias': typeof AdminCategoriasRoute
   '/admin/clientes': typeof AdminClientesRoute
+  '/admin/configuracoes': typeof AdminConfiguracoesRoute
+  '/admin/do-dia': typeof AdminDoDiaRoute
+  '/admin/funcionarios': typeof AdminFuncionariosRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/logs': typeof AdminLogsRoute
   '/admin/pedidos': typeof AdminPedidosRoute
   '/admin/produtos': typeof AdminProdutosRoute
   '/admin/': typeof AdminIndexRoute
@@ -120,7 +148,11 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin/categorias': typeof AdminCategoriasRoute
   '/admin/clientes': typeof AdminClientesRoute
+  '/admin/configuracoes': typeof AdminConfiguracoesRoute
+  '/admin/do-dia': typeof AdminDoDiaRoute
+  '/admin/funcionarios': typeof AdminFuncionariosRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/logs': typeof AdminLogsRoute
   '/admin/pedidos': typeof AdminPedidosRoute
   '/admin/produtos': typeof AdminProdutosRoute
   '/admin': typeof AdminIndexRoute
@@ -137,7 +169,11 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin/categorias': typeof AdminCategoriasRoute
   '/admin/clientes': typeof AdminClientesRoute
+  '/admin/configuracoes': typeof AdminConfiguracoesRoute
+  '/admin/do-dia': typeof AdminDoDiaRoute
+  '/admin/funcionarios': typeof AdminFuncionariosRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/logs': typeof AdminLogsRoute
   '/admin/pedidos': typeof AdminPedidosRoute
   '/admin/produtos': typeof AdminProdutosRoute
   '/admin/': typeof AdminIndexRoute
@@ -155,7 +191,11 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/admin/categorias'
     | '/admin/clientes'
+    | '/admin/configuracoes'
+    | '/admin/do-dia'
+    | '/admin/funcionarios'
     | '/admin/login'
+    | '/admin/logs'
     | '/admin/pedidos'
     | '/admin/produtos'
     | '/admin/'
@@ -170,7 +210,11 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/admin/categorias'
     | '/admin/clientes'
+    | '/admin/configuracoes'
+    | '/admin/do-dia'
+    | '/admin/funcionarios'
     | '/admin/login'
+    | '/admin/logs'
     | '/admin/pedidos'
     | '/admin/produtos'
     | '/admin'
@@ -186,7 +230,11 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/admin/categorias'
     | '/admin/clientes'
+    | '/admin/configuracoes'
+    | '/admin/do-dia'
+    | '/admin/funcionarios'
     | '/admin/login'
+    | '/admin/logs'
     | '/admin/pedidos'
     | '/admin/produtos'
     | '/admin/'
@@ -276,11 +324,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPedidosRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/admin/logs': {
+      id: '/admin/logs'
+      path: '/logs'
+      fullPath: '/admin/logs'
+      preLoaderRoute: typeof AdminLogsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/admin/login': {
       id: '/admin/login'
       path: '/login'
       fullPath: '/admin/login'
       preLoaderRoute: typeof AdminLoginRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/funcionarios': {
+      id: '/admin/funcionarios'
+      path: '/funcionarios'
+      fullPath: '/admin/funcionarios'
+      preLoaderRoute: typeof AdminFuncionariosRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/do-dia': {
+      id: '/admin/do-dia'
+      path: '/do-dia'
+      fullPath: '/admin/do-dia'
+      preLoaderRoute: typeof AdminDoDiaRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/configuracoes': {
+      id: '/admin/configuracoes'
+      path: '/configuracoes'
+      fullPath: '/admin/configuracoes'
+      preLoaderRoute: typeof AdminConfiguracoesRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/admin/clientes': {
@@ -310,7 +386,11 @@ declare module '@tanstack/react-router' {
 interface AdminRouteRouteChildren {
   AdminCategoriasRoute: typeof AdminCategoriasRoute
   AdminClientesRoute: typeof AdminClientesRoute
+  AdminConfiguracoesRoute: typeof AdminConfiguracoesRoute
+  AdminDoDiaRoute: typeof AdminDoDiaRoute
+  AdminFuncionariosRoute: typeof AdminFuncionariosRoute
   AdminLoginRoute: typeof AdminLoginRoute
+  AdminLogsRoute: typeof AdminLogsRoute
   AdminPedidosRoute: typeof AdminPedidosRoute
   AdminProdutosRoute: typeof AdminProdutosRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -319,7 +399,11 @@ interface AdminRouteRouteChildren {
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminCategoriasRoute: AdminCategoriasRoute,
   AdminClientesRoute: AdminClientesRoute,
+  AdminConfiguracoesRoute: AdminConfiguracoesRoute,
+  AdminDoDiaRoute: AdminDoDiaRoute,
+  AdminFuncionariosRoute: AdminFuncionariosRoute,
   AdminLoginRoute: AdminLoginRoute,
+  AdminLogsRoute: AdminLogsRoute,
   AdminPedidosRoute: AdminPedidosRoute,
   AdminProdutosRoute: AdminProdutosRoute,
   AdminIndexRoute: AdminIndexRoute,

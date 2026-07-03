@@ -2,9 +2,20 @@ import { useEffect, useRef } from "react";
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { LogOut, LayoutDashboard, Package, Ruler, ShoppingBag, Users } from "lucide-react";
+import {
+  LogOut,
+  LayoutDashboard,
+  Package,
+  Ruler,
+  ShoppingBag,
+  Users,
+  Settings,
+  ScrollText,
+  Truck,
+  UserCog,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useAdminSession, signOutAdmin } from "@/lib/auth";
+import { useAdminSession, signOutAdmin, type PanelRole } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { formatBRL } from "@/lib/products";
 import { playNewOrderSound } from "@/lib/notify-sound";
@@ -13,38 +24,70 @@ export const Route = createFileRoute("/admin")({
   component: AdminLayout,
 });
 
-const NAV = [
-  { label: "Dashboard", to: "/admin" as const, icon: LayoutDashboard, exact: true },
-  { label: "Pedidos", to: "/admin/pedidos" as const, icon: ShoppingBag, exact: false },
-  { label: "Clientes", to: "/admin/clientes" as const, icon: Users, exact: false },
-  { label: "Produtos", to: "/admin/produtos" as const, icon: Package, exact: false },
-  { label: "Categorias", to: "/admin/categorias" as const, icon: Ruler, exact: false },
+interface NavItem {
+  label: string;
+  to: string;
+  icon: React.ElementType;
+  exact: boolean;
+}
+
+// Nav do admin (acesso total).
+const ADMIN_NAV: NavItem[] = [
+  { label: "Dashboard", to: "/admin", icon: LayoutDashboard, exact: true },
+  { label: "Pedidos", to: "/admin/pedidos", icon: ShoppingBag, exact: false },
+  { label: "Clientes", to: "/admin/clientes", icon: Users, exact: false },
+  { label: "Produtos", to: "/admin/produtos", icon: Package, exact: false },
+  { label: "Categorias", to: "/admin/categorias", icon: Ruler, exact: false },
+  { label: "Funcionários", to: "/admin/funcionarios", icon: UserCog, exact: false },
+  { label: "Logs", to: "/admin/logs", icon: ScrollText, exact: false },
+  { label: "Configurações", to: "/admin/configuracoes", icon: Settings, exact: false },
 ];
 
+// Nav do staff (entregador): só a tela do dia.
+const STAFF_NAV: NavItem[] = [{ label: "Do dia", to: "/admin/do-dia", icon: Truck, exact: false }];
+
+const navForRole = (role: PanelRole): NavItem[] =>
+  role === "admin" ? ADMIN_NAV : role === "staff" ? STAFF_NAV : [];
+
 function AdminLayout() {
-  const { loading, isAdmin, email } = useAdminSession();
+  const { loading, role, isAdmin, email } = useAdminSession();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isLoginPage = pathname === "/admin/login";
 
   const qc = useQueryClient();
   const notified = useRef<Set<string>>(new Set());
+  const invalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Guard: sem sessão de admin (e fora da tela de login) → manda para o login.
+  const nav = navForRole(role);
+
+  // Guard por papel: sem papel → login; staff fora da tela "Do dia" → redireciona.
   useEffect(() => {
-    if (!loading && !isAdmin && !isLoginPage) {
+    if (loading || isLoginPage) return;
+    if (!role) {
       navigate({ to: "/admin/login" });
+      return;
     }
-  }, [loading, isAdmin, isLoginPage, navigate]);
+    if (role === "staff" && !pathname.startsWith("/admin/do-dia")) {
+      navigate({ to: "/admin/do-dia" });
+    }
+  }, [loading, role, isLoginPage, pathname, navigate]);
 
-  // Realtime: novo pedido pago → som + popup (em qualquer tela do admin).
+  // Realtime: novo pedido pago → som + popup (admin e staff recebem).
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!role) return;
     const channel = supabase
       .channel("admin-notify")
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, (payload) => {
-        qc.invalidateQueries({ queryKey: ["admin", "orders"] });
-        qc.invalidateQueries({ queryKey: ["admin", "customers"] });
+        // Debounce: uma rajada de eventos vira um único refetch da lista
+        // (clientes derivam do mesmo cache — ver customerStatsFromOrders).
+        if (invalidateTimer.current) clearTimeout(invalidateTimer.current);
+        invalidateTimer.current = setTimeout(() => {
+          qc.invalidateQueries({ queryKey: ["admin", "orders"] });
+        }, 400);
+
+        // Evita crescer sem limite numa sessão longa do painel.
+        if (notified.current.size > 500) notified.current.clear();
 
         const row = payload.new as {
           id?: string;
@@ -63,9 +106,10 @@ function AdminLayout() {
       })
       .subscribe();
     return () => {
+      if (invalidateTimer.current) clearTimeout(invalidateTimer.current);
       supabase.removeChannel(channel);
     };
-  }, [isAdmin, qc]);
+  }, [role, qc]);
 
   if (isLoginPage) return <Outlet />;
 
@@ -77,7 +121,7 @@ function AdminLayout() {
     );
   }
 
-  if (!isAdmin) return null; // redirecionando para o login
+  if (!role) return null; // redirecionando para o login
 
   return (
     <div className="flex min-h-screen bg-brand-cream font-sans text-brand-deep">
@@ -86,11 +130,11 @@ function AdminLayout() {
         <div className="flex items-center gap-2 border-b border-brand-deep/10 px-5 py-5">
           <LayoutDashboard className="size-5 text-accent-orange" />
           <span className="font-display text-lg font-bold tracking-tight">
-            FreeB <span className="text-brand-deep/50">Admin</span>
+            FreeB <span className="text-brand-deep/50">{isAdmin ? "Admin" : "Entregas"}</span>
           </span>
         </div>
         <nav className="flex-1 space-y-1 p-3">
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <Link
               key={item.to}
               to={item.to}
@@ -106,39 +150,20 @@ function AdminLayout() {
         </nav>
         <div className="border-t border-brand-deep/10 p-3">
           {email && <p className="px-3 pb-2 text-xs text-brand-deep/50 break-all">{email}</p>}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={async () => {
-              await signOutAdmin();
-              navigate({ to: "/admin/login" });
-            }}
-            className="w-full rounded-lg border-brand-deep/20"
-          >
-            <LogOut className="size-4" />
-            Sair
-          </Button>
+          <LogoutButton className="w-full rounded-lg border-brand-deep/20" label="Sair" />
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar (mobile nav) */}
         <header className="flex items-center justify-between gap-4 border-b border-brand-deep/10 bg-white px-5 py-3 md:hidden">
-          <span className="font-display text-lg font-bold">FreeB Admin</span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={async () => {
-              await signOutAdmin();
-              navigate({ to: "/admin/login" });
-            }}
-            className="rounded-lg border-brand-deep/20"
-          >
-            <LogOut className="size-4" />
-          </Button>
+          <span className="font-display text-lg font-bold">
+            FreeB {isAdmin ? "Admin" : "Entregas"}
+          </span>
+          <LogoutButton className="rounded-lg border-brand-deep/20" />
         </header>
         <nav className="flex gap-1 overflow-x-auto border-b border-brand-deep/10 bg-white px-3 py-2 md:hidden">
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <Link
               key={item.to}
               to={item.to}
@@ -158,5 +183,23 @@ function AdminLayout() {
         </main>
       </div>
     </div>
+  );
+}
+
+function LogoutButton({ className, label }: { className?: string; label?: string }) {
+  const navigate = useNavigate();
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={async () => {
+        await signOutAdmin();
+        navigate({ to: "/admin/login" });
+      }}
+      className={className}
+    >
+      <LogOut className="size-4" />
+      {label}
+    </Button>
   );
 }

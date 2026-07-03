@@ -41,29 +41,31 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
   }, [items, hydrated]);
 
-  const value = useMemo<CartContextValue>(() => ({
-    items,
-    totalItems: items.reduce((sum, i) => sum + i.quantity, 0),
-    addItem: (productId, quantity = 1) =>
-      setItems((prev) => {
-        const existing = prev.find((i) => i.productId === productId);
-        if (existing) {
-          return prev.map((i) =>
-            i.productId === productId ? { ...i, quantity: i.quantity + quantity } : i,
-          );
-        }
-        return [...prev, { productId, quantity }];
-      }),
-    updateQuantity: (productId, quantity) =>
-      setItems((prev) =>
-        quantity <= 0
-          ? prev.filter((i) => i.productId !== productId)
-          : prev.map((i) => (i.productId === productId ? { ...i, quantity } : i)),
-      ),
-    removeItem: (productId) =>
-      setItems((prev) => prev.filter((i) => i.productId !== productId)),
-    clear: () => setItems([]),
-  }), [items]);
+  const value = useMemo<CartContextValue>(
+    () => ({
+      items,
+      totalItems: items.reduce((sum, i) => sum + i.quantity, 0),
+      addItem: (productId, quantity = 1) =>
+        setItems((prev) => {
+          const existing = prev.find((i) => i.productId === productId);
+          if (existing) {
+            return prev.map((i) =>
+              i.productId === productId ? { ...i, quantity: i.quantity + quantity } : i,
+            );
+          }
+          return [...prev, { productId, quantity }];
+        }),
+      updateQuantity: (productId, quantity) =>
+        setItems((prev) =>
+          quantity <= 0
+            ? prev.filter((i) => i.productId !== productId)
+            : prev.map((i) => (i.productId === productId ? { ...i, quantity } : i)),
+        ),
+      removeItem: (productId) => setItems((prev) => prev.filter((i) => i.productId !== productId)),
+      clear: () => setItems([]),
+    }),
+    [items],
+  );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

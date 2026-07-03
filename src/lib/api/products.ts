@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import { type Accent, type Product, productImageFallback } from "@/lib/products";
+import { ACCENTS, type Accent, type Product, productImageFallback } from "@/lib/products";
 
 // Formato cru de uma linha da tabela `products` no Supabase.
 interface ProductRow {
@@ -16,8 +16,6 @@ interface ProductRow {
   // join aninhado: supabase-js tipa embeds como array; normalizamos em mapRow.
   category: { id: string; name: string } | { id: string; name: string }[] | null;
 }
-
-const ACCENTS: Accent[] = ["orange", "pink", "gold", "purple"];
 
 // Converte uma linha do banco no tipo Product usado pela UI.
 // `image_url` do banco tem prioridade; cai no fallback local enquanto for null.
