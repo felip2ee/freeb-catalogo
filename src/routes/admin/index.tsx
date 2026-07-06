@@ -36,7 +36,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatBRL } from "@/lib/products";
-import { statusMeta } from "@/lib/order-status";
+import { statusMeta, isPaidStatus } from "@/lib/order-status";
 import {
   adminOrdersQuery,
   listAdminProducts,
@@ -59,7 +59,7 @@ const ymd = (d: Date) => {
   return z.toISOString().slice(0, 10);
 };
 const brNumber = (n: number) => n.toFixed(2).replace(".", ",");
-const isRevenue = (o: AdminOrder) => o.status !== "canceled";
+const isRevenue = (o: AdminOrder) => isPaidStatus(o.status);
 const shortFlavor = (name: string) => name.replace(/^suco de\s+/i, "");
 
 type Preset = "7d" | "30d" | "month" | "all" | "custom";

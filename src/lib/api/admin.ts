@@ -1,7 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import type { Accent } from "@/lib/products";
-import type { OrderStatus } from "@/lib/order-status";
+import { isPaidStatus, type OrderStatus } from "@/lib/order-status";
 
 // Operações do painel admin. Rodam no browser com a SESSÃO do admin — a RLS
 // (is_admin) garante a segurança. Nada de service_role no cliente.
@@ -207,10 +207,12 @@ export function customerStatsFromOrders(orders: AdminOrder[]): CustomerStats[] {
   for (const o of orders) {
     const c = o.customer;
     if (!c) continue;
+    // totalSpent conta só pedido efetivamente pago; orderCount conta todos.
+    const spent = isPaidStatus(o.status) ? o.total : 0;
     const existing = map.get(c.id);
     if (existing) {
       existing.orderCount += 1;
-      existing.totalSpent += o.total;
+      existing.totalSpent += spent;
       if (!existing.lastOrderAt || o.created_at > existing.lastOrderAt) {
         existing.lastOrderAt = o.created_at;
       }
@@ -222,7 +224,7 @@ export function customerStatsFromOrders(orders: AdminOrder[]): CustomerStats[] {
         phone: c.phone,
         cpf: c.cpf,
         orderCount: 1,
-        totalSpent: o.total,
+        totalSpent: spent,
         lastOrderAt: o.created_at,
       });
     }

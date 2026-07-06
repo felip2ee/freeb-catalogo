@@ -12,6 +12,14 @@ export const STATUS_META: Record<OrderStatus, { label: string; className: string
   canceled: { label: "Cancelado", className: "bg-red-500/15 text-red-900" },
 };
 
+// Status que contam como faturamento: pedido efetivamente pago.
+// pending (não pago) e canceled ficam de fora.
+export const PAID_STATUSES: readonly OrderStatus[] = ["paid", "preparing", "delivered"];
+
+export function isPaidStatus(status: string): boolean {
+  return PAID_STATUSES.includes(status as OrderStatus);
+}
+
 export function statusMeta(status: string) {
   return (
     STATUS_META[status as OrderStatus] ?? {
