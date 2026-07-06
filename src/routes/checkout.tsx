@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Copy, QrCode, Check } from "lucide-react";
+import { ArrowLeft, Copy, QrCode, Check, MapPin } from "lucide-react";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -10,9 +10,15 @@ import { PageShell } from "@/components/PageShell";
 import { PaymentBrick, type BrickSubmit } from "@/components/PaymentBrick";
 import { useCart } from "@/contexts/CartContext";
 import { useProductMap } from "@/lib/api/products";
-import { processCheckout, type CheckoutResult } from "@/lib/api/payments";
+import {
+  processCheckout,
+  getOrderStatus,
+  type CheckoutResult,
+  type CreatedOrder,
+} from "@/lib/api/payments";
 import { formatBRL, type Product } from "@/lib/products";
 import { onlyDigits, formatCPF, isValidCPF } from "@/lib/cpf";
+import { PICKUP_MAPS_URL } from "@/lib/pickup";
 import { saveOrderFromApi } from "@/routes/obrigado";
 
 export const Route = createFileRoute("/checkout")({
@@ -65,6 +71,42 @@ function CheckoutPage() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [step, setStep] = useState<Step>("form");
   const [pix, setPix] = useState<NonNullable<CheckoutResult["payment"]["pix"]> | null>(null);
+  const [pixOrder, setPixOrder] = useState<CreatedOrder | null>(null);
+
+  // Polling do Pix: enquanto na tela do QR, checa o status do pedido e, quando
+  // for confirmado, atualiza o comprovante e redireciona automaticamente.
+  const pollAttempts = useRef(0);
+  useEffect(() => {
+    if (step !== "pix" || !pixOrder) return;
+    pollAttempts.current = 0;
+    const id = setInterval(async () => {
+      // Para de consultar após ~10 min para não ficar checando à toa.
+      if (pollAttempts.current++ > 150) {
+        clearInterval(id);
+        return;
+      }
+      try {
+        const { status } = await getOrderStatus({ data: { orderId: pixOrder.id } });
+        if (status && ["paid", "preparing", "delivered"].includes(status)) {
+          clearInterval(id);
+          saveOrderFromApi(
+            { ...pixOrder, status },
+            {
+              name: values.name,
+              email: values.email,
+              phone: values.phone,
+              cpf: values.cpf,
+            },
+          );
+          toast.success("Pagamento confirmado!");
+          navigate({ to: "/obrigado" });
+        }
+      } catch {
+        // erro transitório de rede — tenta de novo no próximo tick
+      }
+    }, 4000);
+    return () => clearInterval(id);
+  }, [step, pixOrder, values, navigate]);
 
   const lines = items
     .map((i) => {
@@ -164,6 +206,7 @@ function CheckoutPage() {
 
     if (payment.method === "pix" && payment.pix) {
       setPix(payment.pix);
+      setPixOrder(order);
       setStep("pix");
       clear();
       return;
@@ -210,6 +253,23 @@ function CheckoutPage() {
             Assim que o pagamento for confirmado, seu pedido é atualizado automaticamente. Você pode
             acompanhar em "Meus pedidos".
           </p>
+
+          <a
+            href={PICKUP_MAPS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-6 flex items-center gap-3 rounded-2xl border border-brand-deep/10 bg-white p-4 text-left transition hover:border-accent-orange/40 hover:shadow-md"
+          >
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent-orange/20 text-accent-orange">
+              <MapPin className="size-5" />
+            </span>
+            <span className="flex-1">
+              <span className="block font-display text-base font-bold">Local de retirada</span>
+              <span className="block text-sm text-brand-deep/60">
+                Toque para abrir a rota no Google Maps
+              </span>
+            </span>
+          </a>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Button

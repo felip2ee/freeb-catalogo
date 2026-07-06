@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Camera, CheckCircle2, Home, Package } from "lucide-react";
+import { Camera, CheckCircle2, Clock, XCircle, Home, MapPin, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/PageShell";
 import { useProductMap } from "@/lib/api/products";
 import { formatBRL } from "@/lib/products";
+import { statusMeta } from "@/lib/order-status";
+import { PICKUP_MAPS_URL } from "@/lib/pickup";
 
 export const Route = createFileRoute("/obrigado")({
   head: () => ({
@@ -29,6 +31,7 @@ interface OrderLine {
 export interface SavedOrder {
   code: string;
   createdAt: string;
+  status?: string; // pending | paid | preparing | delivered | canceled
   customer: { name: string; email: string; phone: string; cpf: string };
   lines: OrderLine[];
   total: number;
@@ -46,6 +49,7 @@ export function saveLastOrder(order: SavedOrder) {
 export interface ApiOrderLike {
   code: string;
   created_at: string;
+  status?: string;
   total: number;
   items: {
     product_id: string;
@@ -62,6 +66,7 @@ export function saveOrderFromApi(order: ApiOrderLike, customer: SavedOrder["cust
   saveLastOrder({
     code: order.code,
     createdAt: order.created_at,
+    status: order.status,
     customer,
     lines: order.items.map((it) => ({
       productId: it.product_id,
@@ -108,28 +113,51 @@ function ThankYouPage() {
   const dateStr = createdAt.toLocaleDateString("pt-BR");
   const timeStr = createdAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
+  const status = order.status ?? "pending";
+  const meta = statusMeta(status);
+  const isPaid = ["paid", "preparing", "delivered"].includes(status);
+  const isCanceled = status === "canceled";
+
+  const StatusIcon = isCanceled ? XCircle : isPaid ? CheckCircle2 : Clock;
+  const iconTone = isCanceled
+    ? "bg-red-500/15 text-red-700"
+    : isPaid
+      ? "bg-accent-orange/20 text-accent-orange"
+      : "bg-accent-gold/20 text-brand-deep";
+  const heading = isCanceled
+    ? "Pedido cancelado"
+    : isPaid
+      ? "Pagamento confirmado!"
+      : "Pedido registrado!";
+  const subtext = isCanceled
+    ? "Este pedido foi cancelado. Se achar que é engano, fale com a gente pelo WhatsApp."
+    : isPaid
+      ? "Seu pedido está confirmado. É só retirar no local quando estiver pronto — apresente este comprovante."
+      : "Recebemos seu pedido. Assim que o pagamento for confirmado, ele é liberado para retirada. Acompanhe em Meus pedidos.";
+
   return (
     <PageShell mainClassName="mx-auto max-w-2xl px-6 py-12 md:py-16">
       <div className="flex flex-col items-center text-center">
-        <div className="flex size-16 items-center justify-center rounded-full bg-accent-orange/20 text-accent-orange">
-          <CheckCircle2 className="size-9" />
+        <div className={`flex size-16 items-center justify-center rounded-full ${iconTone}`}>
+          <StatusIcon className="size-9" />
         </div>
         <h1 className="mt-5 font-display text-4xl font-bold tracking-tight md:text-5xl">
-          Obrigado pelo pedido!
+          {heading}
         </h1>
-        <p className="mt-3 max-w-md text-brand-deep/70">
-          Recebemos seus dados. Em instantes entraremos em contato pelo WhatsApp para confirmar o
-          pagamento e a entrega.
-        </p>
+        <p className="mt-3 max-w-md text-brand-deep/70">{subtext}</p>
 
-        <div className="mt-6 flex items-center gap-2 rounded-full bg-brand-deep px-4 py-2 text-xs font-bold uppercase tracking-widest text-brand-cream">
-          <Camera className="size-4" />
-          Tire um print deste ticket
-        </div>
-        <p className="mt-2 max-w-sm text-sm text-brand-deep/60">
-          Salve este comprovante na galeria do seu celular — você pode precisar dele para acompanhar
-          o pedido.
-        </p>
+        {!isCanceled && (
+          <>
+            <div className="mt-6 flex items-center gap-2 rounded-full bg-brand-deep px-4 py-2 text-xs font-bold uppercase tracking-widest text-brand-cream">
+              <Camera className="size-4" />
+              Tire um print deste ticket
+            </div>
+            <p className="mt-2 max-w-sm text-sm text-brand-deep/60">
+              Salve este comprovante na galeria do seu celular — você pode precisar dele para
+              retirar o pedido.
+            </p>
+          </>
+        )}
       </div>
 
       {/* Ticket */}
@@ -148,6 +176,11 @@ function ThankYouPage() {
             <div className="text-right">
               <p className="text-[10px] uppercase tracking-widest text-brand-deep/50">Pedido</p>
               <p className="font-mono text-base font-bold">{order.code}</p>
+              <span
+                className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest ${meta.className}`}
+              >
+                {meta.label}
+              </span>
             </div>
           </header>
 
@@ -208,7 +241,11 @@ function ThankYouPage() {
           </div>
 
           <div className="mt-6 rounded-md bg-brand-deep/5 px-3 py-2 text-center text-[11px] uppercase tracking-widest text-brand-deep/60">
-            Pagamento via Mercado Pago
+            {isPaid
+              ? "Pagamento confirmado · Retirada no local"
+              : isCanceled
+                ? "Pedido cancelado"
+                : "Aguardando pagamento · Mercado Pago"}
           </div>
 
           <p className="mt-5 text-center font-display text-sm italic text-brand-deep/60">
@@ -219,7 +256,26 @@ function ThankYouPage() {
         <TicketEdge position="bottom" />
       </div>
 
-      <div className="mx-auto mt-10 flex max-w-md flex-col gap-3 sm:flex-row">
+      {!isCanceled && (
+        <a
+          href={PICKUP_MAPS_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mx-auto mt-8 flex max-w-md items-center gap-3 rounded-2xl border border-brand-deep/10 bg-white p-4 transition hover:border-accent-orange/40 hover:shadow-md"
+        >
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent-orange/20 text-accent-orange">
+            <MapPin className="size-5" />
+          </span>
+          <span className="flex-1">
+            <span className="block font-display text-base font-bold">Local de retirada</span>
+            <span className="block text-sm text-brand-deep/60">
+              Toque para abrir a rota no Google Maps
+            </span>
+          </span>
+        </a>
+      )}
+
+      <div className="mx-auto mt-6 flex max-w-md flex-col gap-3 sm:flex-row">
         <Button
           asChild
           className="flex-1 rounded-full bg-accent-orange text-brand-deep hover:bg-accent-orange/90"

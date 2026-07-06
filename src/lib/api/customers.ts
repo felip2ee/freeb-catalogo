@@ -1,15 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-// Histórico do cliente com verificação de posse do e-mail (Supabase Auth OTP).
-// Fluxo: o cliente pede um código por e-mail (signInWithOtp), digita o código
-// (verifyOtp) e o navegador envia o access_token da sessão para cá. O servidor
-// valida o token e busca os pedidos dos cadastros ligados àquele e-mail.
-// Substitui a consulta por CPF (CPF é adivinhável — qualquer um veria o
-// histórico de outra pessoa).
+// Histórico do cliente por CPF + telefone (enquanto não há SMTP para OTP).
+// O cliente prova posse informando o CPF E o telefone do cadastro — os dois
+// precisam bater. CPF sozinho é adivinhável; exigir o telefone junto reduz o
+// risco de alguém ver o histórico de outra pessoa.
+// ⚠️ Ainda é um controle FRACO (não prova posse real do telefone). Migrar para
+// OTP (e-mail/SMS via Supabase Auth) quando houver provedor configurado.
 
 const myOrdersInput = z.object({
-  accessToken: z.string().min(20),
+  cpf: z.string(),
+  phone: z.string(),
 });
 
 export interface OrderHistoryItem {
@@ -35,50 +36,52 @@ export interface CustomerHistory {
   orders: OrderHistoryOrder[];
 }
 
-// O e-mail é verificado, mas o cadastro pode ter sido criado por terceiro com
-// e-mail digitado errado — CPF/telefone continuam mascarados por precaução.
-const maskCpf = (cpf: string) => `***.***.***-${cpf.slice(-2)}`;
-const maskPhone = (phone: string) => {
-  const d = phone.replace(/\D/g, "");
-  return d.length >= 4 ? `*****${d.slice(-4)}` : "****";
+const digits = (s: string) => s.replace(/\D/g, "");
+// Telefone comparável: remove o código do país (55) quando presente, para
+// comparar só DDD+número (o cadastro pode ter sido salvo com ou sem o 55).
+const localPhone = (s: string) => {
+  const d = digits(s);
+  return d.length > 11 && d.startsWith("55") ? d.slice(2) : d;
 };
 
 export const getMyOrders = createServerFn({ method: "POST" })
   .validator((data: unknown) => myOrdersInput.parse(data))
   .handler(async ({ data }): Promise<CustomerHistory> => {
     const { assertRateLimit } = await import("@/lib/rate-limit.server");
+    // Limite global — dificulta força bruta de CPF+telefone.
     assertRateLimit("my-orders", 20, 60_000);
+
+    const cpf = digits(data.cpf);
+    const phone = localPhone(data.phone);
+    if (cpf.length !== 11) throw new Error("invalid_cpf");
+    if (phone.length < 10) throw new Error("invalid_phone");
 
     const { supabaseAdmin } = await import("@/lib/supabase.server");
 
-    // Valida o token e extrai o e-mail comprovado pelo OTP.
-    const { data: userData, error: authErr } = await supabaseAdmin.auth.getUser(data.accessToken);
-    const email = userData?.user?.email;
-    if (authErr || !email) throw new Error("not_authenticated");
-
-    // ilike sem curinga = igualdade case-insensitive. Um mesmo e-mail pode ter
-    // mais de um cadastro (CPFs diferentes) — agregamos todos.
-    const { data: customers, error: cErr } = await supabaseAdmin
+    // CPF é único em customers → 0 ou 1 cadastro.
+    const { data: customer, error: cErr } = await supabaseAdmin
       .from("customers")
-      .select("id,name,email,phone,cpf,created_at")
-      .ilike("email", email)
-      .order("created_at", { ascending: false });
+      .select("id,name,email,phone,cpf")
+      .eq("cpf", cpf)
+      .maybeSingle();
 
     if (cErr) {
-      console.error("getMyOrders customers error:", cErr);
+      console.error("getMyOrders customer error:", cErr);
       throw new Error("history_lookup_failed");
     }
-    if (!customers || customers.length === 0) return { customer: null, orders: [] };
+
+    // Não encontrado OU telefone não confere → mesma resposta vazia
+    // (não revela se aquele CPF existe no banco).
+    if (!customer || localPhone(customer.phone) !== phone) {
+      return { customer: null, orders: [] };
+    }
 
     const { data: orders, error: oErr } = await supabaseAdmin
       .from("orders")
       .select(
         "id,code,status,payment_method,total,created_at,order_items(product_id,name,unit_price,quantity,size)",
       )
-      .in(
-        "customer_id",
-        customers.map((c) => c.id),
-      )
+      .eq("customer_id", customer.id)
       .order("created_at", { ascending: false });
 
     if (oErr) {
@@ -86,13 +89,12 @@ export const getMyOrders = createServerFn({ method: "POST" })
       throw new Error("history_lookup_failed");
     }
 
-    const latest = customers[0];
     return {
       customer: {
-        name: latest.name,
-        email,
-        phone: maskPhone(latest.phone),
-        cpf: maskCpf(latest.cpf),
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+        cpf: customer.cpf,
       },
       orders: (orders ?? []).map((o) => ({
         id: o.id,

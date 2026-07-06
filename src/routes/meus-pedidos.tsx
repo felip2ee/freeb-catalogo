@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Mail, KeyRound, Package, RotateCcw, Receipt, LogOut } from "lucide-react";
+import { Search, Package, RotateCcw, Receipt, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,10 +8,10 @@ import { Label } from "@/components/ui/label";
 import { PageShell } from "@/components/PageShell";
 import { OrderItemsList } from "@/components/OrderItemsList";
 import { useCart } from "@/contexts/CartContext";
-import { supabase } from "@/lib/supabase";
 import { getMyOrders, type CustomerHistory } from "@/lib/api/customers";
 import { formatBRL } from "@/lib/products";
 import { statusMeta } from "@/lib/order-status";
+import { onlyDigits, formatCPF, isValidCPF } from "@/lib/cpf";
 import { saveOrderFromApi } from "@/routes/obrigado";
 
 export const Route = createFileRoute("/meus-pedidos")({
@@ -20,119 +20,74 @@ export const Route = createFileRoute("/meus-pedidos")({
       { title: "Meus pedidos — FreeB" },
       {
         name: "description",
-        content: "Consulte o histórico dos seus pedidos com um código enviado ao seu e-mail.",
+        content: "Consulte o histórico dos seus pedidos informando CPF e telefone da compra.",
       },
     ],
   }),
   component: MyOrdersPage,
 });
 
-type Step = "email" | "code" | "list";
+// Máscara de telefone BR — mesma do checkout.
+const formatPhone = (v: string) => {
+  const d = onlyDigits(v).slice(0, 11);
+  if (d.length <= 10) {
+    return d.replace(/^(\d{0,2})(\d{0,4})(\d{0,4}).*/, (_, a, b, c) =>
+      [a && `(${a}`, a?.length === 2 ? ") " : "", b, c && `-${c}`].filter(Boolean).join(""),
+    );
+  }
+  return d.replace(/^(\d{2})(\d{5})(\d{0,4}).*/, "($1) $2-$3");
+};
 
 function MyOrdersPage() {
   const navigate = useNavigate();
   const { addItem, clear } = useCart();
 
-  const [step, setStep] = useState<Step>("email");
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [error, setError] = useState<string | undefined>();
+  const [cpf, setCpf] = useState("");
+  const [phone, setPhone] = useState("");
+  const [errCpf, setErrCpf] = useState<string | undefined>();
+  const [errPhone, setErrPhone] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
-  const [checkingSession, setCheckingSession] = useState(true);
   const [result, setResult] = useState<CustomerHistory | null>(null);
 
-  // Busca o histórico com o token da sessão verificada.
-  const fetchHistory = async (accessToken: string) => {
-    const data = await getMyOrders({ data: { accessToken } });
-    setResult(data);
-    setStep("list");
-  };
+  const consult = async (e: React.FormEvent) => {
+    e.preventDefault();
+    let bad = false;
+    if (!isValidCPF(cpf)) {
+      setErrCpf("CPF inválido");
+      bad = true;
+    }
+    const phoneLen = onlyDigits(phone).length;
+    if (phoneLen < 10 || phoneLen > 11) {
+      setErrPhone("Telefone inválido");
+      bad = true;
+    }
+    if (bad) return;
 
-  // Sessão já verificada antes (ex.: voltou à página) → pula o OTP.
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (session && active) {
-          setEmail(session.user.email ?? "");
-          await fetchHistory(session.access_token);
-        }
-      } catch {
-        // sessão inválida/expirada → segue no passo de e-mail
-      } finally {
-        if (active) setCheckingSession(false);
+    setLoading(true);
+    try {
+      const data = await getMyOrders({ data: { cpf, phone } });
+      if (!data.customer) {
+        toast.error("Nenhum pedido encontrado", {
+          description: "Confira o CPF e o telefone usados na compra.",
+        });
+        return;
       }
-    })();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const sendCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const addr = email.trim().toLowerCase();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) {
-      setError("E-mail inválido");
-      return;
-    }
-    setError(undefined);
-    setLoading(true);
-    try {
-      const { error: otpErr } = await supabase.auth.signInWithOtp({ email: addr });
-      if (otpErr) throw otpErr;
-      setEmail(addr);
-      setStep("code");
-      toast.success("Código enviado!", {
-        description: `Confira a caixa de entrada de ${addr}.`,
-      });
+      setResult(data);
     } catch (err) {
       console.error(err);
-      const msg = err instanceof Error ? err.message : "";
-      toast.error("Não foi possível enviar o código", {
-        description: msg.includes("rate")
-          ? "Muitos envios seguidos — aguarde um minuto."
-          : "Verifique o e-mail e tente novamente.",
+      toast.error("Não foi possível consultar", {
+        description: "Tente novamente em instantes.",
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const verifyCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const token = code.replace(/\D/g, "");
-    if (token.length !== 6) {
-      setError("Digite o código de 6 dígitos");
-      return;
-    }
-    setError(undefined);
-    setLoading(true);
-    try {
-      const { data, error: vErr } = await supabase.auth.verifyOtp({
-        email,
-        token,
-        type: "email",
-      });
-      if (vErr || !data.session) throw vErr ?? new Error("no_session");
-      await fetchHistory(data.session.access_token);
-    } catch (err) {
-      console.error(err);
-      toast.error("Código inválido ou expirado", {
-        description: "Confira o código ou peça um novo.",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
+  const newQuery = () => {
     setResult(null);
-    setCode("");
-    setStep("email");
+    setPhone("");
+    setErrCpf(undefined);
+    setErrPhone(undefined);
   };
 
   const openReceipt = (order: NonNullable<CustomerHistory["orders"]>[number]) => {
@@ -154,124 +109,87 @@ function MyOrdersPage() {
     <PageShell mainClassName="mx-auto max-w-3xl px-6 py-16">
       <h1 className="font-display text-5xl font-bold tracking-tight md:text-6xl">Meus pedidos</h1>
 
-      {checkingSession ? (
-        <p className="mt-8 text-brand-deep/60">Carregando...</p>
-      ) : step === "email" ? (
+      {!result ? (
         <>
           <p className="mt-3 text-brand-deep/70">
-            Digite o e-mail usado na compra. Enviaremos um código de 6 dígitos para confirmar que é
-            você — só assim seu histórico fica protegido.
+            Informe o <strong>CPF</strong> e o <strong>telefone</strong> usados na compra para
+            consultar seu histórico de pedidos.
           </p>
-          <form
-            onSubmit={sendCode}
-            noValidate
-            className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-end"
-          >
-            <div className="flex-1 space-y-1.5">
-              <Label
-                htmlFor="email"
-                className="text-xs font-semibold uppercase tracking-widest text-brand-deep/70"
-              >
-                E-mail
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                placeholder="voce@exemplo.com"
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  if (error) setError(undefined);
-                }}
-              />
-              {error && <p className="text-xs font-medium text-destructive">{error}</p>}
+          <form onSubmit={consult} noValidate className="mt-8 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="cpf"
+                  className="text-xs font-semibold uppercase tracking-widest text-brand-deep/70"
+                >
+                  CPF
+                </Label>
+                <Input
+                  id="cpf"
+                  inputMode="numeric"
+                  placeholder="000.000.000-00"
+                  value={cpf}
+                  onChange={(e) => {
+                    setCpf(formatCPF(e.target.value));
+                    if (errCpf) setErrCpf(undefined);
+                  }}
+                />
+                {errCpf && <p className="text-xs font-medium text-destructive">{errCpf}</p>}
+              </div>
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="phone"
+                  className="text-xs font-semibold uppercase tracking-widest text-brand-deep/70"
+                >
+                  Telefone
+                </Label>
+                <Input
+                  id="phone"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="(00) 00000-0000"
+                  value={phone}
+                  onChange={(e) => {
+                    setPhone(formatPhone(e.target.value));
+                    if (errPhone) setErrPhone(undefined);
+                  }}
+                />
+                {errPhone && <p className="text-xs font-medium text-destructive">{errPhone}</p>}
+              </div>
             </div>
             <Button
               type="submit"
               disabled={loading}
               className="rounded-full bg-brand-deep px-8 py-6 text-sm font-bold uppercase tracking-widest text-brand-cream hover:bg-brand-deep/90"
             >
-              <Mail className="size-4" />
-              {loading ? "Enviando..." : "Enviar código"}
+              <Search className="size-4" />
+              {loading ? "Consultando..." : "Consultar pedidos"}
             </Button>
           </form>
-        </>
-      ) : step === "code" ? (
-        <>
-          <p className="mt-3 text-brand-deep/70">
-            Enviamos um código de 6 dígitos para <strong>{email}</strong>. Digite-o abaixo.
-          </p>
-          <form
-            onSubmit={verifyCode}
-            noValidate
-            className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-end"
-          >
-            <div className="flex-1 space-y-1.5">
-              <Label
-                htmlFor="code"
-                className="text-xs font-semibold uppercase tracking-widest text-brand-deep/70"
-              >
-                Código
-              </Label>
-              <Input
-                id="code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                placeholder="000000"
-                maxLength={6}
-                value={code}
-                onChange={(e) => {
-                  setCode(e.target.value.replace(/\D/g, "").slice(0, 6));
-                  if (error) setError(undefined);
-                }}
-                className="font-mono text-lg tracking-[0.4em]"
-              />
-              {error && <p className="text-xs font-medium text-destructive">{error}</p>}
-            </div>
-            <Button
-              type="submit"
-              disabled={loading}
-              className="rounded-full bg-brand-deep px-8 py-6 text-sm font-bold uppercase tracking-widest text-brand-cream hover:bg-brand-deep/90"
-            >
-              <KeyRound className="size-4" />
-              {loading ? "Verificando..." : "Confirmar"}
-            </Button>
-          </form>
-          <button
-            type="button"
-            onClick={() => {
-              setStep("email");
-              setCode("");
-            }}
-            className="mt-4 text-sm text-brand-deep/60 underline-offset-4 hover:text-brand-deep hover:underline"
-          >
-            Trocar e-mail ou reenviar código
-          </button>
         </>
       ) : (
         <section className="mt-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-brand-deep/70">
-              Conectado como <strong>{email}</strong>
+              Histórico de <strong>{result.customer?.name}</strong>
             </p>
             <Button
               variant="outline"
               size="sm"
-              onClick={signOut}
+              onClick={newQuery}
               className="rounded-full border-brand-deep/20"
             >
-              <LogOut className="size-4" />
-              Sair
+              <ArrowLeft className="size-4" />
+              Nova consulta
             </Button>
           </div>
 
-          {!result || result.orders.length === 0 ? (
+          {result.orders.length === 0 ? (
             <div className="mt-8 flex flex-col items-center gap-4 rounded-2xl border border-brand-deep/10 bg-white p-12 text-center">
               <Package className="size-12 text-brand-deep/40" />
               <div>
                 <p className="font-display text-xl font-bold">Nenhum pedido encontrado</p>
-                <p className="mt-2 text-brand-deep/60">Não encontramos pedidos para esse e-mail.</p>
+                <p className="mt-2 text-brand-deep/60">Esse cadastro ainda não tem pedidos.</p>
               </div>
             </div>
           ) : (

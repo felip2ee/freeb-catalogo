@@ -76,6 +76,27 @@ export interface CheckoutResult {
   };
 }
 
+// Consulta só o status atual de um pedido (para o polling do Pix). O id é um
+// UUID não adivinhável, então expor apenas o status por id é seguro; nada de
+// dado pessoal é retornado.
+const orderStatusInput = z.object({ orderId: z.string().uuid() });
+
+export const getOrderStatus = createServerFn({ method: "POST" })
+  .validator((data: unknown) => orderStatusInput.parse(data))
+  .handler(async ({ data }): Promise<{ status: string | null }> => {
+    const { supabaseAdmin } = await import("@/lib/supabase.server");
+    const { data: order, error } = await supabaseAdmin
+      .from("orders")
+      .select("status")
+      .eq("id", data.orderId)
+      .maybeSingle();
+    if (error) {
+      console.error("getOrderStatus error:", error);
+      throw new Error("status_lookup_failed");
+    }
+    return { status: order?.status ?? null };
+  });
+
 export const processCheckout = createServerFn({ method: "POST" })
   .validator((data: unknown) => checkoutInput.parse(data))
   .handler(async ({ data }): Promise<CheckoutResult> => {
